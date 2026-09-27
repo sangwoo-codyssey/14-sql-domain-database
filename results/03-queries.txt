@@ -1,0 +1,450 @@
+-- ./run.sh test 출력 (MySQL 9.7.2, DB 'budget')
+
+-- =====================================================================
+-- 미션 14 — 가계부 핵심 쿼리 16개 (MySQL 9.7)
+-- 실행: ./run.sh test   (매번 DB 를 새로 만든 뒤 위에서부터 차례로 실행)
+--
+--   기본 조회 4  Q01 ~ Q04      집계     3  Q09 ~ Q11      인덱스    1  Q14
+--   조인     4  Q05 ~ Q08      서브쿼리 2  Q12 ~ Q13      수정·삭제 2  Q15 ~ Q16
+--
+-- 날짜 조건은 CURDATE() 대신 날짜 리터럴로 고정했다 — 언제 실행해도 results/ 와 같은 결과가 나와야 한다.
+-- 수정·삭제(Q15·Q16)는 앞 쿼리들의 결과를 바꾸지 않도록 맨 끝에 둔다.
+-- MySQL 전용 문법을 쓴 쿼리에는 설명 아래 줄에 '[MySQL 전용]' 으로 표기했다.
+-- =====================================================================
+
+-- [Q01] 기본 조회 — 2026년 9월 거래 중 5만 원 이상인 것, 금액이 큰 순서로 5건
+--       [MySQL 전용] LIMIT (표준 SQL 은 FETCH FIRST 5 ROWS ONLY)
+
+--------------
+SELECT id, entry_date, amount, memo
+FROM ledger_entry
+WHERE entry_date BETWEEN '2026-09-01' AND '2026-09-30'
+  AND amount >= 50000
+ORDER BY amount DESC
+LIMIT 5
+--------------
+
++----+------------+---------+------------------+
+| id | entry_date | amount  | memo             |
++----+------------+---------+------------------+
+| 29 | 2026-09-25 | 3500000 | 9월 급여         |
+| 27 | 2026-09-25 | 3200000 | 9월 급여         |
+| 28 | 2026-09-25 | 2800000 | 9월 급여         |
+| 33 | 2026-09-05 |  650000 | 9월 월세         |
+| 30 | 2026-09-01 |  300000 | 부모님 용돈      |
++----+------------+---------+------------------+
+5 rows in set
+
+-- [Q02] 기본 조회 — 메모에 '커피'가 들어간 거래를 최근 순으로 검색
+--       [MySQL 전용] LIMIT
+
+--------------
+SELECT id, entry_date, amount, memo
+FROM ledger_entry
+WHERE memo LIKE '%커피%'
+ORDER BY entry_date DESC, id DESC
+LIMIT 10
+--------------
+
++----+------------+--------+------------------------+
+| id | entry_date | amount | memo                   |
++----+------------+--------+------------------------+
+| 43 | 2026-09-22 |   4500 | 테이크아웃 커피        |
+| 37 | 2026-09-11 |  12000 | 커피 원두              |
+| 22 | 2026-08-18 |   4800 | 콜드브루 커피          |
++----+------------+--------+------------------------+
+3 rows in set
+
+-- [Q03] 기본 조회 — 2026년 5월 이후 가입한 회원 중 가장 최근 가입자 3명
+--       [MySQL 전용] LIMIT
+
+--------------
+SELECT id, name, email, joined_at
+FROM member
+WHERE joined_at >= '2026-05-01'
+ORDER BY joined_at DESC
+LIMIT 3
+--------------
+
++----+-----------+-------------------------+------------+
+| id | name      | email                   | joined_at  |
++----+-----------+-------------------------+------------+
+| 10 | 임건우    | geonwoo.lim@example.com | 2026-09-10 |
+|  9 | 장서윤    | seoyun.jang@example.com | 2026-08-21 |
+|  8 | 윤지우    | jiwoo.yoon@example.com  | 2026-06-18 |
++----+-----------+-------------------------+------------+
+3 rows in set
+
+-- [Q04] 기본 조회 — 김민준의 생활비카드(계좌 2번) 최근 거래 5건
+--       [MySQL 전용] LIMIT
+
+--------------
+SELECT id, entry_date, category_id, amount, memo
+FROM ledger_entry
+WHERE account_id = 2
+ORDER BY entry_date DESC, id DESC
+LIMIT 5
+--------------
+
++----+------------+-------------+--------+----------------------+
+| id | entry_date | category_id | amount | memo                 |
++----+------------+-------------+--------+----------------------+
+| 35 | 2026-09-08 |           9 | 210000 | 가을 자켓            |
+| 34 | 2026-09-06 |           4 |  78000 | 친구 생일 저녁       |
+| 32 | 2026-09-02 |           5 |   5500 | 아메리카노           |
+| 31 | 2026-09-02 |           4 |  13000 | 점심 제육볶음        |
+| 18 | 2026-08-04 |           5 |   6000 | 카페라떼             |
++----+------------+-------------+--------+----------------------+
+5 rows in set
+
+-- [Q05] 조인(INNER) — 9월 1~10일 거래를 회원·계좌·카테고리 이름과 함께 보기
+
+--------------
+SELECT e.entry_date,
+       m.name  AS member_name,
+       a.name  AS account_name,
+       c.name  AS category_name,
+       c.entry_type,
+       e.amount,
+       e.memo
+FROM ledger_entry e
+INNER JOIN account  a ON a.id = e.account_id
+INNER JOIN member   m ON m.id = a.member_id
+INNER JOIN category c ON c.id = e.category_id
+WHERE e.entry_date BETWEEN '2026-09-01' AND '2026-09-10'
+ORDER BY e.entry_date, e.id
+--------------
+
++------------+-------------+-----------------+---------------+------------+--------+----------------------+
+| entry_date | member_name | account_name    | category_name | entry_type | amount | memo                 |
++------------+-------------+-----------------+---------------+------------+--------+----------------------+
+| 2026-09-01 | 이서연      | 주거래통장      | 용돈          | INCOME     | 300000 | 부모님 용돈          |
+| 2026-09-02 | 김민준      | 생활비카드      | 식비          | EXPENSE    |  13000 | 점심 제육볶음        |
+| 2026-09-02 | 김민준      | 생활비카드      | 카페          | EXPENSE    |   5500 | 아메리카노           |
+| 2026-09-05 | 김민준      | 급여통장        | 주거          | EXPENSE    | 650000 | 9월 월세             |
+| 2026-09-06 | 김민준      | 생활비카드      | 식비          | EXPENSE    |  78000 | 친구 생일 저녁       |
+| 2026-09-08 | 김민준      | 생활비카드      | 쇼핑          | EXPENSE    | 210000 | 가을 자켓            |
+| 2026-09-10 | 박지호      | 신용카드        | 식비          | EXPENSE    |  41000 | 장보기               |
++------------+-------------+-----------------+---------------+------------+--------+----------------------+
+7 rows in set
+
+-- [Q06] 조인(INNER) — 회원별 보유 계좌 목록
+
+--------------
+SELECT m.id   AS member_id,
+       m.name AS member_name,
+       a.name AS account_name,
+       a.account_type,
+       a.opened_at
+FROM member m
+INNER JOIN account a ON a.member_id = m.id
+ORDER BY m.id, a.id
+--------------
+
++-----------+-------------+-----------------+--------------+------------+
+| member_id | member_name | account_name    | account_type | opened_at  |
++-----------+-------------+-----------------+--------------+------------+
+|         1 | 김민준      | 급여통장        | BANK         | 2026-01-05 |
+|         1 | 김민준      | 생활비카드      | CARD         | 2026-01-10 |
+|         2 | 이서연      | 주거래통장      | BANK         | 2026-01-12 |
+|         2 | 이서연      | 지갑            | CASH         | 2026-01-12 |
+|         3 | 박지호      | 급여통장        | BANK         | 2026-02-03 |
+|         3 | 박지호      | 신용카드        | CARD         | 2026-02-05 |
+|         4 | 최수아      | 주거래통장      | BANK         | 2026-02-20 |
+|         5 | 정도윤      | 급여통장        | BANK         | 2026-03-08 |
+|         5 | 정도윤      | 체크카드        | CARD         | 2026-03-10 |
+|         6 | 강하은      | 용돈통장        | BANK         | 2026-04-15 |
+|         7 | 조예준      | 주거래통장      | BANK         | 2026-05-02 |
+|         8 | 윤지우      | 신용카드        | CARD         | 2026-06-18 |
++-----------+-------------+-----------------+--------------+------------+
+12 rows in set
+
+-- [Q07] 조인(LEFT) — 계좌를 하나도 등록하지 않은 회원 찾기
+
+--------------
+SELECT m.id, m.name, m.joined_at
+FROM member m
+LEFT JOIN account a ON a.member_id = m.id
+WHERE a.id IS NULL
+ORDER BY m.id
+--------------
+
++----+-----------+------------+
+| id | name      | joined_at  |
++----+-----------+------------+
+|  9 | 장서윤    | 2026-08-21 |
+| 10 | 임건우    | 2026-09-10 |
++----+-----------+------------+
+2 rows in set
+
+-- [Q08] 조인(LEFT) — 모든 카테고리의 9월 거래 건수와 합계 (거래가 없으면 0)
+
+--------------
+SELECT c.name       AS category_name,
+       c.entry_type,
+       COUNT(e.id)  AS entry_count,
+       COALESCE(SUM(e.amount), 0) AS total_amount
+FROM category c
+LEFT JOIN ledger_entry e
+       ON e.category_id = c.id
+      AND e.entry_date BETWEEN '2026-09-01' AND '2026-09-30'
+GROUP BY c.id, c.name, c.entry_type
+ORDER BY total_amount DESC, c.id
+--------------
+
++---------------+------------+-------------+--------------+
+| category_name | entry_type | entry_count | total_amount |
++---------------+------------+-------------+--------------+
+| 급여          | INCOME     |           3 |      9500000 |
+| 주거          | EXPENSE    |           1 |       650000 |
+| 쇼핑          | EXPENSE    |           2 |       369000 |
+| 용돈          | INCOME     |           1 |       300000 |
+| 식비          | EXPENSE    |           6 |       229000 |
+| 통신          | EXPENSE    |           1 |        69000 |
+| 교통          | EXPENSE    |           1 |        55000 |
+| 기타          | EXPENSE    |           2 |        32000 |
+| 카페          | EXPENSE    |           3 |        22000 |
+| 문화          | EXPENSE    |           1 |        22000 |
+| 이자          | INCOME     |           0 |            0 |
+| 의료          | EXPENSE    |           0 |            0 |
+| 경조사        | EXPENSE    |           0 |            0 |
++---------------+------------+-------------+--------------+
+13 rows in set
+
+-- [Q09] 집계 — 월별 수입·지출 합계와 잔액
+--       [MySQL 전용] DATE_FORMAT (표준 SQL 이라면 EXTRACT(YEAR/MONTH FROM ...) 두 개로 묶는다)
+
+--------------
+SELECT DATE_FORMAT(e.entry_date, '%Y-%m') AS month,
+       SUM(CASE WHEN c.entry_type = 'INCOME'  THEN e.amount ELSE 0 END) AS income,
+       SUM(CASE WHEN c.entry_type = 'EXPENSE' THEN e.amount ELSE 0 END) AS expense,
+       SUM(CASE WHEN c.entry_type = 'INCOME'  THEN e.amount ELSE -e.amount END) AS balance
+FROM ledger_entry e
+INNER JOIN category c ON c.id = e.category_id
+GROUP BY DATE_FORMAT(e.entry_date, '%Y-%m')
+ORDER BY month
+--------------
+
++---------+---------+---------+---------+
+| month   | income  | expense | balance |
++---------+---------+---------+---------+
+| 2026-07 | 9800000 |  903500 | 8896500 |
+| 2026-08 | 9504200 | 1019800 | 8484400 |
+| 2026-09 | 9800000 | 1448000 | 8352000 |
++---------+---------+---------+---------+
+3 rows in set
+
+-- [Q10] 집계 — 9월 지출 카테고리별 건수·합계·평균, 합계가 큰 순서 (지출 랭킹)
+
+--------------
+SELECT c.name               AS category_name,
+       COUNT(*)             AS entry_count,
+       SUM(e.amount)        AS total_amount,
+       ROUND(AVG(e.amount)) AS avg_amount
+FROM ledger_entry e
+INNER JOIN category c ON c.id = e.category_id
+WHERE c.entry_type = 'EXPENSE'
+  AND e.entry_date BETWEEN '2026-09-01' AND '2026-09-30'
+GROUP BY c.id, c.name
+ORDER BY total_amount DESC, c.id   -- 합계가 같으면 카테고리 id 순 (적지 않은 순서는 보장되지 않는다)
+--------------
+
++---------------+-------------+--------------+------------+
+| category_name | entry_count | total_amount | avg_amount |
++---------------+-------------+--------------+------------+
+| 주거          |           1 |       650000 |     650000 |
+| 쇼핑          |           2 |       369000 |     184500 |
+| 식비          |           6 |       229000 |      38167 |
+| 통신          |           1 |        69000 |      69000 |
+| 교통          |           1 |        55000 |      55000 |
+| 기타          |           2 |        32000 |      16000 |
+| 카페          |           3 |        22000 |       7333 |
+| 문화          |           1 |        22000 |      22000 |
++---------------+-------------+--------------+------------+
+8 rows in set
+
+-- [Q11] 집계 — 7~9월 지출 합계가 10만 원 이상인 회원, 지출이 큰 순서
+
+--------------
+SELECT m.name        AS member_name,
+       COUNT(*)      AS expense_count,
+       SUM(e.amount) AS total_expense
+FROM member m
+INNER JOIN account      a ON a.member_id = m.id
+INNER JOIN ledger_entry e ON e.account_id = a.id
+INNER JOIN category     c ON c.id = e.category_id
+WHERE c.entry_type = 'EXPENSE'
+GROUP BY m.id, m.name
+HAVING SUM(e.amount) >= 100000
+ORDER BY total_expense DESC, m.id
+--------------
+
++-------------+---------------+---------------+
+| member_name | expense_count | total_expense |
++-------------+---------------+---------------+
+| 김민준      |            11 |       2325000 |
+| 이서연      |             7 |        395000 |
+| 최수아      |             3 |        207000 |
+| 박지호      |             5 |        183000 |
+| 정도윤      |             4 |        141800 |
++-------------+---------------+---------------+
+5 rows in set
+
+-- [Q12] 서브쿼리(스칼라) — 전체 지출 평균보다 큰 지출 거래
+
+--------------
+SELECT e.id, e.entry_date, c.name AS category_name, e.amount, e.memo
+FROM ledger_entry e
+INNER JOIN category c ON c.id = e.category_id
+WHERE c.entry_type = 'EXPENSE'
+  AND e.amount > (SELECT AVG(e2.amount)
+                  FROM ledger_entry e2
+                  INNER JOIN category c2 ON c2.id = e2.category_id
+                  WHERE c2.entry_type = 'EXPENSE')
+ORDER BY e.amount DESC, e.id
+--------------
+
++----+------------+---------------+--------+---------------+
+| id | entry_date | category_name | amount | memo          |
++----+------------+---------------+--------+---------------+
+|  7 | 2026-07-05 | 주거          | 650000 | 7월 월세      |
+| 19 | 2026-08-05 | 주거          | 650000 | 8월 월세      |
+| 33 | 2026-09-05 | 주거          | 650000 | 9월 월세      |
+| 35 | 2026-09-08 | 쇼핑          | 210000 | 가을 자켓     |
+| 40 | 2026-09-15 | 쇼핑          | 159000 | 가습기        |
+| 21 | 2026-08-14 | 쇼핑          | 120000 | 운동화        |
++----+------------+---------------+--------+---------------+
+6 rows in set
+
+-- [Q13] 서브쿼리(FROM 절 파생 테이블) — 9월 예산을 넘긴 회원·카테고리와 초과 금액
+
+--------------
+SELECT m.name              AS member_name,
+       c.name              AS category_name,
+       b.amount            AS budget_amount,
+       s.spent             AS spent_amount,
+       s.spent - b.amount  AS over_amount
+FROM budget b
+INNER JOIN member   m ON m.id = b.member_id
+INNER JOIN category c ON c.id = b.category_id
+INNER JOIN (
+    SELECT a.member_id, e.category_id, SUM(e.amount) AS spent
+    FROM ledger_entry e
+    INNER JOIN account a ON a.id = e.account_id
+    WHERE e.entry_date BETWEEN '2026-09-01' AND '2026-09-30'
+    GROUP BY a.member_id, e.category_id
+) s ON s.member_id = b.member_id AND s.category_id = b.category_id
+WHERE b.budget_month = '2026-09-01'
+  AND s.spent > b.amount
+ORDER BY over_amount DESC, m.id, c.id
+--------------
+
++-------------+---------------+---------------+--------------+-------------+
+| member_name | category_name | budget_amount | spent_amount | over_amount |
++-------------+---------------+---------------+--------------+-------------+
+| 김민준      | 쇼핑          |        150000 |       210000 |       60000 |
+| 이서연      | 쇼핑          |        100000 |       159000 |       59000 |
+| 이서연      | 식비          |         60000 |        70000 |       10000 |
+| 정도윤      | 교통          |         50000 |        55000 |        5000 |
+| 박지호      | 카페          |         10000 |        12000 |        2000 |
++-------------+---------------+---------------+--------------+-------------+
+5 rows in set
+
+-- [Q14] 인덱스 — 거래 날짜(entry_date)에 인덱스를 만들고, 전후 실행 계획을 비교
+--       적용 이유: 월별·기간별 조회(Q01·Q05·Q08·Q10·Q13)가 모두 entry_date 범위로 거래를 거르는데,
+--                 거래 내역은 계속 쌓이는 테이블이라 인덱스가 없으면 매번 전체를 훑는다.
+--       [MySQL 전용] EXPLAIN FORMAT=TRADITIONAL (9.x 기본값은 TREE 형식)
+
+-- [Q14-전] 인덱스가 없을 때 — type=ALL (47행 전체를 읽고 거른다)
+
+--------------
+EXPLAIN FORMAT=TRADITIONAL
+SELECT * FROM ledger_entry
+WHERE entry_date BETWEEN '2026-09-20' AND '2026-09-30'
+--------------
+
++----+-------------+--------------+------------+------+---------------+------+---------+------+------+----------+-------------+
+| id | select_type | table        | partitions | type | possible_keys | key  | key_len | ref  | rows | filtered | Extra       |
++----+-------------+--------------+------------+------+---------------+------+---------+------+------+----------+-------------+
+|  1 | SIMPLE      | ledger_entry | NULL       | ALL  | NULL          | NULL | NULL    | NULL |   47 |    11.11 | Using where |
++----+-------------+--------------+------------+------+---------------+------+---------+------+------+----------+-------------+
+1 row in set, 1 warning
+
+--------------
+CREATE INDEX idx_ledger_entry_entry_date ON ledger_entry (entry_date)
+--------------
+
+Query OK, 0 rows affected
+Records: 0  Duplicates: 0  Warnings: 0
+
+-- [Q14-후] 인덱스를 만든 뒤 — type=range, key=idx_ledger_entry_entry_date (해당 범위만 읽는다)
+
+--------------
+EXPLAIN FORMAT=TRADITIONAL
+SELECT * FROM ledger_entry
+WHERE entry_date BETWEEN '2026-09-20' AND '2026-09-30'
+--------------
+
++----+-------------+--------------+------------+-------+-----------------------------+-----------------------------+---------+------+------+----------+-----------------------+
+| id | select_type | table        | partitions | type  | possible_keys               | key                         | key_len | ref  | rows | filtered | Extra                 |
++----+-------------+--------------+------------+-------+-----------------------------+-----------------------------+---------+------+------+----------+-----------------------+
+|  1 | SIMPLE      | ledger_entry | NULL       | range | idx_ledger_entry_entry_date | idx_ledger_entry_entry_date | 3       | NULL |    8 |   100.00 | Using index condition |
++----+-------------+--------------+------------+-------+-----------------------------+-----------------------------+---------+------+------+----------+-----------------------+
+1 row in set, 1 warning
+
+-- [Q15] 수정 — '기타'로 분류된 거래 중 메모에 '택시'가 있는 것을 '교통'으로 재분류
+
+--------------
+UPDATE ledger_entry
+SET category_id = (SELECT id FROM category WHERE name = '교통')
+WHERE category_id = (SELECT id FROM category WHERE name = '기타')
+  AND memo LIKE '%택시%'
+--------------
+
+Query OK, 2 rows affected
+Rows matched: 2  Changed: 2  Warnings: 0
+
+-- [Q15-확인] 재분류 결과 — 택시 거래 2건은 '교통', 택시가 아닌 '기타' 1건은 그대로
+
+--------------
+SELECT e.id, e.memo, c.name AS category_name
+FROM ledger_entry e
+INNER JOIN category c ON c.id = e.category_id
+WHERE e.id IN (23, 39, 47)
+ORDER BY e.id
+--------------
+
++----+----------------------+---------------+
+| id | memo                 | category_name |
++----+----------------------+---------------+
+| 23 | 택시 귀가            | 교통          |
+| 39 | 택시 야근 귀가       | 교통          |
+| 47 | 생활 잡화            | 기타          |
++----+----------------------+---------------+
+3 rows in set
+
+-- [Q16] 삭제 — 같은 날 같은 금액으로 두 번 입력된 중복 거래(46번) 삭제
+
+--------------
+DELETE FROM ledger_entry
+WHERE id = 46
+--------------
+
+Query OK, 1 row affected
+
+-- [Q16-확인] 삭제 결과 — 9월 26일 이서연 주거래통장의 장보기는 1건만 남는다
+
+--------------
+SELECT id, entry_date, amount, memo
+FROM ledger_entry
+WHERE account_id = 3
+  AND entry_date = '2026-09-26'
+ORDER BY id
+--------------
+
++----+------------+--------+-----------+
+| id | entry_date | amount | memo      |
++----+------------+--------+-----------+
+| 45 | 2026-09-26 |  35000 | 장보기    |
++----+------------+--------+-----------+
+1 row in set
