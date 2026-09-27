@@ -111,7 +111,7 @@ INNER JOIN category c ON c.id = e.category_id
 WHERE c.entry_type = 'EXPENSE'
   AND e.entry_date BETWEEN '2026-09-01' AND '2026-09-30'
 GROUP BY c.id, c.name
-ORDER BY total_amount DESC;
+ORDER BY total_amount DESC, c.id;   -- 합계가 같으면 카테고리 id 순 (적지 않은 순서는 보장되지 않는다)
 
 -- [Q11] 집계 — 7~9월 지출 합계가 10만 원 이상인 회원, 지출이 큰 순서
 SELECT m.name        AS member_name,
@@ -124,7 +124,7 @@ INNER JOIN category     c ON c.id = e.category_id
 WHERE c.entry_type = 'EXPENSE'
 GROUP BY m.id, m.name
 HAVING SUM(e.amount) >= 100000
-ORDER BY total_expense DESC;
+ORDER BY total_expense DESC, m.id;
 
 
 -- [Q12] 서브쿼리(스칼라) — 전체 지출 평균보다 큰 지출 거래
@@ -156,7 +156,7 @@ INNER JOIN (
 ) s ON s.member_id = b.member_id AND s.category_id = b.category_id
 WHERE b.budget_month = '2026-09-01'
   AND s.spent > b.amount
-ORDER BY over_amount DESC;
+ORDER BY over_amount DESC, m.id, c.id;
 
 
 -- [Q14] 인덱스 — 거래 날짜(entry_date)에 인덱스를 만들고, 전후 실행 계획을 비교
