@@ -246,7 +246,7 @@ INNER JOIN category c ON c.id = e.category_id
 WHERE c.entry_type = 'EXPENSE'
   AND e.entry_date BETWEEN '2026-09-01' AND '2026-09-30'
 GROUP BY c.id, c.name
-ORDER BY total_amount DESC
+ORDER BY total_amount DESC, c.id   -- 합계가 같으면 카테고리 id 순 (적지 않은 순서는 보장되지 않는다)
 --------------
 
 +---------------+-------------+--------------+------------+
@@ -276,7 +276,7 @@ INNER JOIN category     c ON c.id = e.category_id
 WHERE c.entry_type = 'EXPENSE'
 GROUP BY m.id, m.name
 HAVING SUM(e.amount) >= 100000
-ORDER BY total_expense DESC
+ORDER BY total_expense DESC, m.id
 --------------
 
 +-------------+---------------+---------------+
@@ -336,7 +336,7 @@ INNER JOIN (
 ) s ON s.member_id = b.member_id AND s.category_id = b.category_id
 WHERE b.budget_month = '2026-09-01'
   AND s.spent > b.amount
-ORDER BY over_amount DESC
+ORDER BY over_amount DESC, m.id, c.id
 --------------
 
 +-------------+---------------+---------------+--------------+-------------+
