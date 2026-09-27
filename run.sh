@@ -54,11 +54,12 @@ ensure_up() {
 }
 
 # mysql -vvv 출력 정리: 실행 시간은 매번 달라 diff 만 더럽히고,
-# 주석만 있는 블록은 "0 rows affected" 문장으로 찍히므로 주석 줄만 남긴다.
+# 주석만 있는 블록은 "0 rows affected" 문장으로 찍히므로 주석 줄만 남기고, 연속된 주석 줄은 붙인다.
 tidy() {
   perl -0pe '
     s/ \((?:\d+ min )?\d+(?:\.\d+)? sec\)//g;
     s/-{14}\n((?:--[^\n]*\n)+)-{14}\n\nQuery OK, 0 rows affected\n\n/$1\n/g;
+    s/^(--[^\n]*)\n\n(?=--(?! \[)(?!-))/$1\n/mg;
     s/\nBye\n\z/\n/;
   '
 }
