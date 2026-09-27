@@ -1,0 +1,14 @@
+.DS_Store
+.idea/
+.vscode/
+
+# --- 생성물 ---
+# DB 파일은 sql/ 의 스크립트로 언제든 재생성된다. 제출물이 아니다.
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# --- 로컬 전용 (원격과 동일하게 가므로 애초에 커밋하지 않는다) ---
+HANDOFF.md
+plans/
