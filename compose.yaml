@@ -1,0 +1,27 @@
+# 미션 14 — MySQL 컨테이너. 직접 docker compose 를 부르기보다 ./run.sh 를 쓴다.
+name: mission14-sql
+
+services:
+  db:
+    image: mysql:9.7                     # Docker Hub 'lts' 태그가 가리키는 버전 (latest 는 innovation)
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?.env 가 없습니다 — ./run.sh up 으로 띄우세요}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-budget}
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_0900_ai_ci
+      - --default-time-zone=+09:00       # NOW()/CURDATE() 를 한국 시간 기준으로
+    ports:
+      - "127.0.0.1:${MYSQL_PORT:-3306}:3306"   # 외부 노출 없이 로컬(DBeaver 등)에서만 접속
+    volumes:
+      - db-data:/var/lib/mysql
+      - ./sql:/sql:ro                    # mysql 셸에서 source /sql/03-queries.sql 로 바로 실행 가능
+    healthcheck:
+      # TCP(127.0.0.1)로 확인해야 초기화 중 임시 서버(--skip-networking)를 준비 완료로 오인하지 않는다
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "--silent"]
+      interval: 2s
+      timeout: 5s
+      retries: 90
+
+volumes:
+  db-data:

@@ -2,12 +2,12 @@
 .idea/
 .vscode/
 
-# --- 생성물 ---
-# DB 파일은 sql/ 의 스크립트로 언제든 재생성된다. 제출물이 아니다.
-*.db
-*.db-journal
-*.sqlite
-*.sqlite3
+# --- 로컬 설정 ---
+# DB 비밀번호가 들어간다. 템플릿은 .env.example 로 커밋한다.
+.env
+
+# ./run.sh erd 가 변환 중에만 쓰는 임시 파일
+docs/.erd.mmd
 
 # --- 로컬 전용 (원격과 동일하게 가므로 애초에 커밋하지 않는다) ---
 HANDOFF.md

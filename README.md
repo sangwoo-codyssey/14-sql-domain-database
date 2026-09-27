@@ -1,21 +1,20 @@
 # 14 - 정보를 깔끔하게 정리하는 디지털 서랍장 (SQL Domain Database)
 
-> 🚧 **미착수** — 디렉터리·레포 준비만 완료
+> 🚧 **진행 중** — 실행 환경(MySQL 9.7 on Docker Compose) 구성 완료
 
 백엔드 프레임워크 없이, 도메인 테이블을 직접 설계하고(PK/FK/제약조건) 데이터를 넣고
 요구사항을 SQL 로 푸는 전 과정. 결과물은 **SQL 파일 3개 + 실행 결과**다.
 
 - 과제 원문: 로컬 `../14-sql-domain-database.md`
 
-## 선택 사항 (미정)
+## 선택 사항
 
 | 항목 | 값 | 비고 |
 |---|---|---|
-| DB | _미정_ | SQLite / MySQL / PostgreSQL / H2 중 택1 — SQLite 가 설치 부담 0 |
-| 도메인 주제 | _미정_ | 최소 4테이블 + 1:N 관계 2개 이상을 낼 수 있는 주제 |
-| 접속 도구 | _미정_ | CLI / DBeaver / TablePlus / DataGrip |
-
-`run.sh` 는 **SQLite 를 가정**해 작성돼 있다. 다른 DB 를 고르면 같이 고쳐야 한다.
+| DB | **MySQL 9.7** | 공식 이미지 `mysql:9.7` (Docker Hub `lts` 태그). Docker Compose 로 띄운다 |
+| 도메인 주제 | **가계부** | 회원 · 계좌 · 카테고리 · 거래 내역 · 월 예산 |
+| 접속 도구 | **CLI** (컨테이너 안 `mysql`) | 로컬에 MySQL 클라이언트를 설치할 필요가 없다. DBeaver 등으로는 `127.0.0.1:3306` 접속 |
+| ERD | **Mermaid** | `docs/erd.md` (GitHub 에서 바로 렌더) → `./run.sh erd` 로 PNG |
 
 ## 스키마
 
@@ -49,21 +48,31 @@ DB 고유 문법을 쓴 쿼리에는 어떤 DB 전용인지 주석으로 명시�
 │   ├── 01-schema.sql    # 제출물 1 — CREATE TABLE + PK/FK/제약조건
 │   ├── 02-seed.sql      # 제출물 2 — 테이블당 10행 이상 (부모 테이블 먼저)
 │   └── 03-queries.sql   # 제출물 3 — 쿼리 15개 + 한 줄 설명
-├── results/             # 제출물 4 — 실행 결과 캡처(이미지 또는 텍스트)
-├── docs/                # (선택) ERD 다이어그램
+├── results/             # 제출물 4 — 실행 결과 텍스트 (./run.sh test --save)
+├── docs/                # (선택) ERD — erd.md(Mermaid 원본) · erd.png
+├── compose.yaml         # MySQL 9.7 컨테이너 (127.0.0.1 에만 바인딩)
+├── .env.example         # 접속 정보 템플릿 — .env 가 없으면 run.sh 가 복사
 ├── run.sh
 └── README.md
 ```
 
 ## 실행
 
+필요한 것: Docker Desktop (Compose v2). MySQL 클라이언트 설치는 필요 없다.
+
 ```bash
-./run.sh build    # DB 파일 새로 만들고 01-schema → 02-seed 적용
-./run.sh run      # sqlite3 대화형 셸 열기
-./run.sh test     # 03-queries.sql 실행하고 결과 출력 (results/ 로 저장 가능)
+./run.sh up           # MySQL 컨테이너 기동 (healthy 까지 대기, 첫 기동은 이미지 다운로드)
+./run.sh build        # DB 재생성 → 01-schema → 02-seed
+./run.sh test         # build 후 03-queries 실행 결과 출력 (--save 면 results/ 에 저장)
+./run.sh check        # 과제 정량 요건 점검 (테이블·PK·FK·NOT NULL·UNIQUE·행 수)
+./run.sh run          # mysql 대화형 셸
+./run.sh erd          # docs/erd.md → docs/erd.png
+./run.sh down [-v]    # 컨테이너 정리 (-v 면 데이터 볼륨까지)
 ```
 
-`DB_FILE` 로 DB 경로를, `SQLITE` 로 sqlite3 실행 파일을 바꿀 수 있다.
+- `test` 는 매번 `build` 부터 다시 한다 — 쿼리 파일에 UPDATE/DELETE 가 있어도 몇 번을 돌리든 같은 결과가 나온다.
+- MySQL 은 InnoDB 가 FK 를 항상 검사하므로 별도 설정 없이 "없는 값 참조" 가 막힌다 (`check` 가 `foreign_key_checks` 도 확인).
+- 포트를 바꾸려면 `.env` 의 `MYSQL_PORT` 를 고친다.
 
 ## 범위 밖 (과제 §7 명시)
 
