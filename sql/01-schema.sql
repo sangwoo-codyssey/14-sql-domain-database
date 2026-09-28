@@ -9,13 +9,14 @@
 --
 -- FK 가 가리킬 부모 테이블을 먼저 만든다: member → category → account → ledger_entry → budget
 -- [MySQL 전용] AUTO_INCREMENT — 표준 SQL 의 GENERATED ... AS IDENTITY 를 MySQL 은 지원하지 않는다
+-- VARCHAR(n) 의 n 은 바이트가 아니라 글자 수다(utf8mb4). 들어올 값보다 넉넉하되 무한정은 아니게 잡았다.
 -- =====================================================================
 
 -- 회원
 CREATE TABLE member (
     id          INT           NOT NULL AUTO_INCREMENT,
-    email       VARCHAR(100)  NOT NULL,
-    name        VARCHAR(50)   NOT NULL,
+    email       VARCHAR(100)  NOT NULL,   -- 흔한 이메일 주소는 100자 안에 든다 (규격상 최대 254자까지 받으려면 늘려야 한다)
+    name        VARCHAR(50)   NOT NULL,   -- 한글 이름·닉네임에 충분한 여유
     joined_at   DATE          NOT NULL,
     PRIMARY KEY (id),
     CONSTRAINT uq_member_email UNIQUE (email)
@@ -24,8 +25,8 @@ CREATE TABLE member (
 -- 카테고리 — 수입/지출 구분은 카테고리가 가진다 (급여는 늘 수입, 식비는 늘 지출)
 CREATE TABLE category (
     id          INT           NOT NULL AUTO_INCREMENT,
-    name        VARCHAR(30)   NOT NULL,
-    entry_type  VARCHAR(10)   NOT NULL,
+    name        VARCHAR(30)   NOT NULL,   -- '경조사' 같은 짧은 분류명
+    entry_type  VARCHAR(10)   NOT NULL,   -- 'INCOME'(6자)·'EXPENSE'(7자) 두 값만 — 아래 CHECK
     PRIMARY KEY (id),
     CONSTRAINT uq_category_name UNIQUE (name),
     CONSTRAINT ck_category_entry_type CHECK (entry_type IN ('INCOME', 'EXPENSE'))
@@ -35,8 +36,8 @@ CREATE TABLE category (
 CREATE TABLE account (
     id            INT           NOT NULL AUTO_INCREMENT,
     member_id     INT           NOT NULL,
-    name          VARCHAR(50)   NOT NULL,
-    account_type  VARCHAR(10)   NOT NULL,
+    name          VARCHAR(50)   NOT NULL,   -- '생활비카드' 처럼 회원이 붙이는 별칭
+    account_type  VARCHAR(10)   NOT NULL,   -- 'BANK'·'CARD'·'CASH' 세 값만 — 아래 CHECK
     opened_at     DATE          NOT NULL,
     PRIMARY KEY (id),
     CONSTRAINT uq_account_member_name UNIQUE (member_id, name),   -- 같은 회원 안에서만 이름이 겹치면 안 된다
@@ -51,7 +52,7 @@ CREATE TABLE ledger_entry (
     category_id  INT           NOT NULL,
     amount       INT           NOT NULL,   -- 원 단위, 항상 양수
     entry_date   DATE          NOT NULL,
-    memo         VARCHAR(200),             -- 선택 입력
+    memo         VARCHAR(200),             -- 선택 입력, 한 줄 메모라 200자로 제한
     PRIMARY KEY (id),
     CONSTRAINT ck_ledger_entry_amount CHECK (amount > 0),
     CONSTRAINT fk_ledger_entry_account  FOREIGN KEY (account_id)  REFERENCES account (id),
