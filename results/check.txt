@@ -10,6 +10,6 @@
 | 행 수: account (>= 10)                    |   12 | PASS   |
 | 행 수: budget (>= 10)                     |   12 | PASS   |
 | 행 수: category (>= 10)                   |   13 | PASS   |
-| 행 수: ledger_entry (>= 10)               |   46 | PASS   |
+| 행 수: ledger_entry (>= 10)               |   47 | PASS   |
 | 행 수: member (>= 10)                     |   10 | PASS   |
 +-------------------------------------------+------+--------+
