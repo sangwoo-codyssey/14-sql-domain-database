@@ -24,7 +24,7 @@
 | 관계를 저장하는 방식 | 거래 한 줄마다 회원 이름·계좌 이름·카테고리 이름을 글자로 반복해 적는다. 김민준의 생활비카드 거래가 8건이면 `김민준`·`생활비카드` 가 8번 들어간다 | 거래(`ledger_entry`)는 `account_id`·`category_id` 번호만 갖고, 이름은 `member`·`account`·`category` 에 **한 번만** 저장한다. 볼 때 JOIN 으로 합친다(Q05) |
 | 값을 고칠 때 | 카테고리 이름을 바꾸면 그 이름이 적힌 행을 모두 찾아 고쳐야 한다. 하나라도 빠지면 같은 카테고리가 두 이름으로 갈라진다 | `category.name` 한 칸만 고치면 그 카테고리의 거래 전부에 반영된다 |
 | 잘못된 값 막기 | 칸마다 데이터 유효성 검사를 걸 수는 있지만 붙여넣기로 우회되고, 목록에서 항목을 지울 때 그 값을 쓰는 행이 있는지는 확인하지 않는다 | 저장하는 순간 DB 가 거부한다. 없는 계좌를 가리키는 거래·계좌가 남은 회원의 삭제(FK), 중복 이메일(UNIQUE), 0 이하 금액(CHECK), 빈 필수 칸(NOT NULL) — [FK 오류 예시](#fk-가-실제로-막는-것) |
-| 요구사항 조회 | 필터·피벗·VLOOKUP 을 손으로 조합하고, 그 과정은 파일에 남지 않는다 | 요구사항 하나를 SQL 한 문장으로 쓴다. 쿼리가 파일로 남아 누구나 다시 실행할 수 있다(`./run.sh test`) |
+| 요구사항 조회 | 필터·피벗·VLOOKUP 을 조합한다. 수식과 피벗은 파일에 남지만, 손으로 거친 필터·정렬·복사 단계는 남지 않아 같은 결과를 다시 만들기 어렵다 | 요구사항 하나를 SQL 한 문장으로 쓴다. 쿼리가 파일로 남아 누구나 다시 실행할 수 있다(`./run.sh test`) |
 | 엑셀이 나은 점 | 설치 없이 바로 열고, 칸을 눌러 고치고, 차트를 쉽게 만든다. 혼자 쓰는 작은 표라면 충분하다 | 스키마 설계와 SQL 이 필요하고, DB 서버(여기선 컨테이너)를 띄워야 한다 |
 
 그래서 테이블을 나눠 저장한다. **같은 사실은 한 곳에만 두고, 테이블 사이의 관계는 FK 번호로 잇는다.**
@@ -57,7 +57,8 @@
 
 ### FK 가 실제로 막는 것
 
-MySQL(InnoDB)은 FK 를 항상 검사한다(`./run.sh check` 의 `foreign_key_checks = 1`). 9.7.2 에서 실행한 그대로다.
+`foreign_key_checks = 1`(기본값, `./run.sh check` 에서 확인)이면 MySQL(InnoDB)은 저장할 때마다 FK 를 검사한다.
+세션에서 0 으로 끄면 검사를 건너뛰므로, 이 레포는 끄지 않는다. 아래는 9.7.2 에서 실행한 그대로다.
 메시지 속 `` `budget` `` 은 DB 이름(`.env` 의 `MYSQL_DATABASE`)이다.
 
 ```text
@@ -69,6 +70,9 @@ ERROR 1452 (23000) at line 1: Cannot add or update a child row: a foreign key co
 DELETE FROM member WHERE id = 1;
 ERROR 1451 (23000) at line 1: Cannot delete or update a parent row: a foreign key constraint fails (`budget`.`account`, CONSTRAINT `fk_account_member` FOREIGN KEY (`member_id`) REFERENCES `member` (`id`))
 ```
+
+고치는 법은 방향에 따라 다르다. 자식을 넣을 때는 가리킬 부모를 먼저 넣는다(시드도 `member → … → budget` 순서다).
+부모를 지울 때는 그 부모를 가리키는 자식 행을 먼저 지우거나 다른 부모로 옮긴다.
 
 ## 샘플 데이터
 
@@ -114,14 +118,22 @@ LEFT JOIN·DELETE 결과가 비지 않도록 일부러 넣은 행도 있다. 계
 
 ### INNER JOIN 과 LEFT JOIN 의 차이
 
-같은 회원-계좌 조인을 두 방식으로 세어 보면 이렇다.
+같은 회원-계좌 조인을 두 방식으로 세어 보면 이렇다(행 수는 각 조인 결과를 `COUNT(*)` 로 센 값).
 
 | 조인 | 결과 행 | 나온 회원 | 계좌 칸이 NULL 인 행 |
 |---|---|---|---|
 | `member INNER JOIN account` (Q06) | 12 | 8명 | 0 |
 | `member LEFT JOIN account` | 14 | 10명 | 2 |
 
+```sql
+SELECT m.id, m.name, a.id AS account_id, a.name AS account_name
+FROM member m
+LEFT JOIN account a ON a.member_id = m.id
+ORDER BY m.id, a.id;
+```
+
 ```text
+결과 14행 중 발췌
 | id | name   | account_id | account_name |
 |  1 | 김민준 |          1 | 급여통장     |
 |  1 | 김민준 |          2 | 생활비카드   |
@@ -131,7 +143,7 @@ LEFT JOIN·DELETE 결과가 비지 않도록 일부러 넣은 행도 있다. 계
 
 - INNER 는 양쪽에 짝이 있는 행만 남긴다. LEFT 는 왼쪽(`member`) 행을 전부 남기고, 짝이 없으면 오른쪽 칸을 NULL 로 채운다.
 - Q07 은 이 NULL 행만 골라(`WHERE a.id IS NULL`) 계좌 없는 회원을 찾는다.
-- Q08 은 날짜 조건을 WHERE 가 아니라 **ON** 에 둔다. WHERE 에 두면 NULL 로 채운 행이 비교에서 탈락해 9월 거래가 없는 카테고리가 결과에서 사라진다.
+- Q08 은 날짜 조건을 WHERE 가 아니라 **ON** 에 둔다. WHERE 에 두면 9월 거래가 없는 카테고리의 행이 모두 걸러져 결과에서 사라진다. 짝이 없어 NULL 로 채운 행(의료·경조사)은 NULL 과의 비교가 참이 아니라서, 다른 달 거래와 짝지어진 행(이자는 8월 거래만 있다)은 날짜가 맞지 않아서 빠진다.
   건수는 `COUNT(*)` 가 아니라 `COUNT(e.id)` 로 센다. `COUNT(*)` 는 NULL 로 채운 행도 1 로 세고, `COUNT(e.id)` 는 NULL 을 건너뛴다. 합계는 `COALESCE(SUM(...), 0)` 으로 NULL 대신 0 을 보인다.
 
 ### 집계 쿼리의 처리 순서
@@ -144,6 +156,7 @@ FROM · JOIN(ON) → WHERE → GROUP BY → (묶음마다 COUNT·SUM·AVG 계산
 
 - WHERE 는 **묶기 전** 행을 하나씩, HAVING 은 **묶은 뒤** 묶음을 하나씩 거른다. 그래서 `SUM(e.amount) >= 100000` 같은 집계 조건은 HAVING 에 둔다(Q11). WHERE 에 두면 `ERROR 1111 Invalid use of group function` 이 난다.
 - SELECT 의 별칭은 SELECT 단계에서 생긴다. 그래서 ORDER BY 에서는 쓸 수 있지만(Q10 의 `ORDER BY total_amount`), WHERE 에서는 쓸 수 없다(`ERROR 1054 Unknown column`).
+  MySQL 은 HAVING 에서도 별칭을 허용하지만(`HAVING total_expense >= 100000`) 표준 SQL 이 아닌 MySQL 확장이라, Q11 은 `HAVING SUM(e.amount) >= 100000` 으로 쓴다.
 
 ### 인덱스 (Q14) 와 복합 인덱스 후보
 
@@ -155,7 +168,7 @@ FROM · JOIN(ON) → WHERE → GROUP BY → (묶음마다 COUNT·SUM·AVG 계산
   | 지금 (FK 인덱스만) | `fk_ledger_entry_account` | `Using filesort` — 거른 8행을 따로 정렬한다 |
   | 복합 인덱스 추가 | `idx_ledger_entry_account_date` | `Backward index scan` — 인덱스를 거꾸로 읽어 정렬 단계가 없다 |
 
-  이 인덱스를 만들면 MySQL 이 FK 용으로 자동 생성해 둔 `fk_ledger_entry_account` 를 스스로 지운다. 맨 앞 컬럼이 `account_id` 라 FK 검사를 대신할 수 있기 때문이다(실측). 47행에서는 체감 차이가 없고 과제의 인덱스 요건은 Q14 로 채웠으므로 적용하지는 않았다. 거래가 쌓이면 가장 먼저 넣을 후보다.
+  이 인덱스를 만들면 MySQL 이 FK 용으로 자동 생성해 둔 **인덱스** `fk_ledger_entry_account` 를 스스로 지운다. 같은 이름의 FK 제약은 그대로 남는다. 맨 앞 컬럼이 `account_id` 라 새 인덱스가 FK 검사를 대신하기 때문이다. 그 뒤로는 FK 가 복합 인덱스를 쓰므로, 복합 인덱스를 DROP 하려 하면 `ERROR 1553 … needed in a foreign key constraint` 로 막힌다(둘 다 실측). 47행에서는 체감 차이가 없고 과제의 인덱스 요건은 Q14 로 채웠으므로 적용하지는 않았다. 거래가 쌓이면 가장 먼저 넣을 후보다.
 - **어떤 컬럼에 거는가.** WHERE·JOIN·ORDER BY 에 자주 쓰이고, 조건으로 **좁게** 거르는 컬럼이다(짧은 기간의 `entry_date`, FK 컬럼). 문자열은 앞 글자 검색(`LIKE '장보기%'`)만 인덱스로 범위를 좁힐 수 있다. Q02 처럼 `LIKE '%커피%'` 로 중간을 찾으면 B-tree 인덱스가 있어도 전체를 읽는다. `memo` 에 인덱스를 걸고 실측하면 `'장보기%'` 는 `range`, `'%커피%'` 는 `ALL` 이다.
 
 ## 폴더 구조
@@ -199,20 +212,27 @@ FROM · JOIN(ON) → WHERE → GROUP BY → (묶음마다 COUNT·SUM·AVG 계산
 
 - [`results/03-queries.txt`](results/03-queries.txt) — 쿼리 16개마다 설명 주석, SQL 원문, 결과표, 영향받은 행 수(`2 rows affected` 등)를 실행 순서대로 담았다.
 - [`results/check.txt`](results/check.txt) — 과제 정량 요건 점검 결과.
-- 텍스트라서 결과를 **검증**할 수 있다. `./run.sh test | diff - results/03-queries.txt` 가 아무것도 출력하지 않으면 지금 실행한 결과가 제출한 결과와 한 글자도 다르지 않다는 뜻이다. 쿼리를 고치면 `--save` 로 다시 만들고 `git diff` 로 무엇이 바뀌었는지 본다.
+- 텍스트라서 결과를 **검증**할 수 있다. `./run.sh test | diff - results/03-queries.txt` 에서 diff 가 차이를 하나도 출력하지 않으면(진행 메시지 "DB 'budget' 재생성 완료" 한 줄은 stderr 로 뜬다) 지금 실행한 결과가 제출한 결과와 한 글자도 다르지 않다는 뜻이다. 쿼리를 고치면 `--save` 로 다시 만들고 `git diff` 로 무엇이 바뀌었는지 본다.
 
 ## 작업 중 부딪힌 문제와 해결
 
+### 겪은 문제
+
 | 문제 | 원인 | 해결 | 근거 |
 |---|---|---|---|
-| 실행 결과를 다시 뽑을 때마다 diff 가 생긴다 | `mysql -vvv` 가 쿼리마다 실행 시간 `(0.00 sec)` 을 찍고, 주석만 있는 블록을 `Query OK, 0 rows affected` 로 출력한다 | `run.sh` 의 `tidy()` 가 실행 시간을 지우고 주석 블록을 정리한다 | 커밋 `863afeb` · `954fa43` |
-| 두 번째 실행부터 결과가 달라진다 | Q15(UPDATE)·Q16(DELETE)가 DB 를 바꾼다 | `test` 는 매번 DB 를 새로 만든 뒤 실행하고, 수정·삭제 쿼리는 파일 맨 끝에 둔다 | `run.sh` 의 `cmd_test` |
-| 실행하는 날에 따라 결과가 바뀔 수 있다 | `CURDATE()` 기준 조건은 실행한 날짜에 따라 대상이 달라진다 | 날짜 조건을 리터럴(`'2026-09-01'` 등)로 고정했다 | 커밋 `0ab858f` |
-| EXPLAIN 에 `type`·`key` 열이 나오지 않는다 | MySQL 9.x 는 기본 EXPLAIN 형식이 TREE 다(`@@explain_format = TREE`, 9.7.2 실측) | Q14 에 `EXPLAIN FORMAT=TRADITIONAL` 을 명시했다 | Q14 주석 |
-| 인덱스를 만들었는데 9월 전체 조회는 여전히 `ALL` 이다 | 47행 중 21행(45%)이 조건에 맞아 전체를 읽는 쪽이 싸다고 판단한다 | 비교 범위를 9/20~30(8행)으로 좁혀 `ALL → range` 를 확인했다 | Q14 주석 |
+| 실행 결과를 다시 뽑을 때마다 diff 가 생긴다 | `mysql -vvv` 가 쿼리마다 실행 시간 `(0.000 sec)` 을 찍는데, 이 값이 실행할 때마다 다르다 | `run.sh` 의 `tidy()` 가 실행 시간을 지운다. 주석만 있는 블록이 `Query OK, 0 rows affected` 로 찍혀 결과를 어지럽히는 것도 같은 함수에서 정리했다 | 커밋 `863afeb` (실행 시간 제거) · `954fa43` (주석 줄 정리) |
+| EXPLAIN 에 `type`·`key` 열이 나오지 않는다 | 이 버전(9.7.2)은 기본 EXPLAIN 형식이 TREE 다(`@@explain_format = TREE` 실측) | Q14 에 `EXPLAIN FORMAT=TRADITIONAL` 을 명시했다 | Q14 를 쓰면서 확인, 첫 커밋 `0ab858f` 부터 반영 |
+| 인덱스를 만들었는데 9월 전체 조회는 여전히 `ALL` 이다 | 47행 중 21행(45%)이 조건에 맞아 전체를 읽는 쪽이 싸다고 판단한다 | 비교 범위를 9/20~30(8행)으로 좁혀 `ALL → range` 를 확인했다 | Q14 를 쓰면서 확인, 첫 커밋 `0ab858f` 부터 반영 |
 | 랭킹 쿼리의 순서가 보장되지 않는다 | Q10 에서 카페·문화가 22000 원으로 동점인데 `ORDER BY` 기준이 하나뿐이었다 | 두 번째 정렬 기준(id)을 추가했다. 같은 구조인 Q11·Q13 도 보강했다 | 커밋 `f05c887` |
 | `check.txt` 의 거래 수(46)가 README·시드(47)와 다르다 | `check` 를 `test`(Q16 이 1건 삭제) 뒤에 돌렸다 | `build` 직후 `check` 로 다시 만들었다 | 커밋 `f898ae6` |
-| "예산은 지출 카테고리에만" 규칙을 CHECK 로 걸 수 없다 | CHECK 는 같은 행의 값만 볼 수 있는데, 수입/지출 구분은 `category` 테이블에 있다 | 트리거는 과제 범위 밖(§7)이라 입력하는 쪽이 지키기로 하고 스키마 주석에 적었다. 시드는 지출 카테고리에만 예산을 건다 | `01-schema.sql` 의 `budget` 주석 |
+
+### 설계 단계에서 미리 막은 문제
+
+| 막으려던 문제 | 원인 | 대응 | 근거 |
+|---|---|---|---|
+| 두 번째 실행부터 결과가 달라진다 | Q15(UPDATE)·Q16(DELETE)가 DB 를 바꾼다 | `test` 는 매번 DB 를 새로 만든 뒤 실행하고, 수정·삭제 쿼리는 파일 맨 끝에 둔다 | 커밋 `863afeb` 의 `run.sh` `cmd_test` |
+| 실행하는 날에 따라 결과가 바뀐다 | `CURDATE()` 기준 조건은 실행한 날짜에 따라 대상이 달라진다 | 처음부터 날짜 조건을 리터럴(`'2026-09-01'` 등)로 썼다 | 커밋 `0ab858f` |
+| "예산은 지출 카테고리에만" 규칙을 CHECK 로 걸 수 없다 | CHECK 는 같은 행의 값만 볼 수 있는데, 수입/지출 구분은 `category` 테이블에 있다 | 트리거는 과제 범위 밖(§7)이라 입력하는 쪽이 지키기로 하고 스키마 주석에 적었다. 시드는 지출 카테고리에만 예산을 건다 | 커밋 `1594ec8` 의 `budget` 주석 |
 
 ## 범위 밖 (과제 §7 명시)
 
